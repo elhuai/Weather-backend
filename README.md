@@ -1,11 +1,12 @@
 # 天氣預報 API 服務
 
-這是一個使用 Node.js + Express 開發的天氣預報 API 服務，串接中央氣象署（CWA）開放資料平台，提供高雄市天氣預報資料。
+這是一個使用 Node.js + Express 開發的天氣預報 API 服務，串接中央氣象署（CWA）開放資料平台，提供各縣市（例如：臺北市、彰化縣、嘉義市等）36 小時天氣預報與日出/日落資料。
 
 ## 功能特色
 
 - ✅ 串接 CWA 氣象資料開放平台
-- ✅ 取得高雄市 36 小時天氣預報
+- ✅ 取得各縣市 36 小時天氣預報
+- ✅ 提供指定縣市的日出 / 日落時間
 - ✅ 環境變數管理
 - ✅ RESTful API 設計
 - ✅ CORS 支援
@@ -93,32 +94,57 @@ GET /api/health
 }
 ```
 
-### 3. 取得高雄天氣預報
+### 3. 查詢指定縣市天氣（含日出/日落）
 
 ```
-GET /api/weather/kaohsiung
+GET /api/weather?city={cityKey}
 ```
 
-回應範例：
+`cityKey` 使用英文字鍵（程式內 `cityMapping` 對應 CWA 中文縣市）：
+
+- `taipei` → 臺北市
+- `new-taipei` → 新北市
+- `taichung` → 臺中市
+- `tainan` → 臺南市
+- `kaohsiung` → 高雄市
+- `changhua` → 彰化縣
+- `chiayi-city` → 嘉義市
+- `chiayi-county` → 嘉義縣
+- `yilan` → 宜蘭縣
+…其餘請參見 `server.js` 中的 `cityMapping`。
+
+範例請求：
+
+```
+GET /api/weather?city=changhua
+GET /api/weather?city=chiayi-city
+```
+
+回應範例（僅回傳指定縣市，包含日出/日落）：
 
 ```json
 {
   "success": true,
   "data": {
-    "city": "高雄市",
-    "updateTime": "資料更新時間說明",
+    "city": "彰化縣",
+    "updateTime": "三十六小時天氣預報",
     "forecasts": [
       {
-        "startTime": "2025-09-30 18:00:00",
-        "endTime": "2025-10-01 06:00:00",
-        "weather": "多雲時晴",
-        "rain": "10%",
-        "minTemp": "25°C",
-        "maxTemp": "32°C",
-        "comfort": "悶熱",
-        "windSpeed": "偏南風 3-4 級"
+        "startTime": "2025-12-02 18:00:00",
+        "endTime": "2025-12-03 06:00:00",
+        "weather": "晴時多雲",
+        "rain": "20%",
+        "minTemp": "19°C",
+        "maxTemp": "22°C",
+        "comfort": "稍有寒意至舒適",
+        "windSpeed": ""
       }
     ]
+  },
+  "sunTimes": {
+    "date": "2025-12-02",
+    "sunRiseTime": "06:24",
+    "sunSetTime": "17:10"
   }
 }
 ```
