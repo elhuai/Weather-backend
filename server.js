@@ -44,116 +44,147 @@ const cityMapping = {
  * 取得各城市 36 小時天氣預報
  * 透過 query 參數 ?city= 對應 cityMapping 英文鍵，轉成中文查詢 CWA
  */
+// 抽取：取得天氣資料（回傳物件，不直接回應）
+const fetchWeatherData = async (locationName) => {
+  const response = await axios.get(
+    `${CWA_API_BASE_URL}/v1/rest/datastore/F-C0032-001`,
+    {
+      params: {
+        Authorization: CWA_API_KEY,
+        locationName: locationName,
+      },
+    }
+  );
+
+  const allLocations = response.data.records.location || [];
+  const locationData = allLocations.find((loc) => loc.locationName === locationName);
+  if (!locationData) {
+    const err = new Error(`無法取得${locationName}天氣資料`);
+    err.status = 404;
+    throw err;
+  }
+
+  const weatherData = {
+    city: locationData.locationName,
+    updateTime: response.data.records.datasetDescription,
+    forecasts: [],
+  };
+
+  const weatherElements = locationData.weatherElement;
+  const timeCount = weatherElements[0].time.length;
+
+  for (let i = 0; i < timeCount; i++) {
+    const forecast = {
+      startTime: weatherElements[0].time[i].startTime,
+      endTime: weatherElements[0].time[i].endTime,
+      weather: "",
+      rain: "",
+      minTemp: "",
+      maxTemp: "",
+      comfort: "",
+      windSpeed: "",
+    };
+
+    weatherElements.forEach((element) => {
+      const value = element.time[i].parameter;
+      switch (element.elementName) {
+        case "Wx":
+          forecast.weather = value.parameterName;
+          break;
+        case "PoP":
+          forecast.rain = value.parameterName + "%";
+          break;
+        case "MinT":
+          forecast.minTemp = value.parameterName + "°C";
+          break;
+        case "MaxT":
+          forecast.maxTemp = value.parameterName + "°C";
+          break;
+        case "CI":
+          forecast.comfort = value.parameterName;
+          break;
+        case "WS":
+          forecast.windSpeed = value.parameterName;
+          break;
+      }
+    });
+
+    weatherData.forecasts.push(forecast);
+  }
+
+  return weatherData;
+};
+
+// 取得日出日落資料（僅回傳 SunRiseTime 與 SunSetTime）
+const fetchSunRiseSet = async (locationName) => {
+  const response = await axios.get(
+    `${CWA_API_BASE_URL}/v1/rest/datastore/A-B0062-001`,
+    {
+      params: {
+        Authorization: CWA_API_KEY,
+        CountyName: locationName,
+      },
+    }
+  );
+
+  const locations = response.data?.records?.locations?.location || [];
+  const match = locations.find((loc) => loc.CountyName === locationName);
+  const firstTime = match?.time?.[0];
+  if (!firstTime) {
+    const err = new Error(`無法取得${locationName}日出日落資料`);
+    err.status = 404;
+    throw err;
+  }
+  return {
+    date: firstTime.Date,
+    sunRiseTime: firstTime.SunRiseTime,
+    sunSetTime: firstTime.SunSetTime,
+  };
+};
+
+// 單純回傳天氣資料的端點
 const getWeather = async (req, res) => {
   const { city } = req.query;
   const locationName = cityMapping[city] || city;
   try {
-    // 檢查是否有設定 API Key
     if (!CWA_API_KEY) {
       return res.status(500).json({
         error: "伺服器設定錯誤",
         message: "請在 .env 檔案中設定 CWA_API_KEY",
       });
     }
-
-    // 呼叫 CWA API - 一般天氣預報（36小時）
-    // API 文件: https://opendata.cwa.gov.tw/dist/opendata-swagger.html
-    const response = await axios.get(
-      `${CWA_API_BASE_URL}/v1/rest/datastore/F-C0032-001`,
-      {
-        params: {
-          Authorization: CWA_API_KEY,
-          locationName: locationName,
-        },
-      }
-    );
-
-    // 取得指定城市的天氣資料（只保留所需縣市）
-    const allLocations = response.data.records.location || [];
-    const locationData = allLocations.find(
-      (loc) => loc.locationName === locationName
-    );
-
-    if (!locationData) {
-      return res.status(404).json({
-        error: "查無資料",
-        message: `無法取得${locationName}天氣資料`,
-      });
-    }
-
-    // 整理天氣資料
-    const weatherData = {
-      city: locationData.locationName,
-      updateTime: response.data.records.datasetDescription,
-      forecasts: [],
-    };
-
-    // 解析天氣要素
-    const weatherElements = locationData.weatherElement;
-    const timeCount = weatherElements[0].time.length;
-
-    for (let i = 0; i < timeCount; i++) {
-      const forecast = {
-        startTime: weatherElements[0].time[i].startTime,
-        endTime: weatherElements[0].time[i].endTime,
-        weather: "",
-        rain: "",
-        minTemp: "",
-        maxTemp: "",
-        comfort: "",
-        windSpeed: "",
-      };
-
-      weatherElements.forEach((element) => {
-        const value = element.time[i].parameter;
-        switch (element.elementName) {
-          case "Wx":
-            forecast.weather = value.parameterName;
-            break;
-          case "PoP":
-            forecast.rain = value.parameterName + "%";
-            break;
-          case "MinT":
-            forecast.minTemp = value.parameterName + "°C";
-            break;
-          case "MaxT":
-            forecast.maxTemp = value.parameterName + "°C";
-            break;
-          case "CI":
-            forecast.comfort = value.parameterName;
-            break;
-          case "WS":
-            forecast.windSpeed = value.parameterName;
-            break;
-        }
-      });
-
-      weatherData.forecasts.push(forecast);
-    }
-
-    res.json({
-      success: true,
-      data: weatherData,
-    });
+    const weatherData = await fetchWeatherData(locationName);
+    res.json({ success: true, data: weatherData });
   } catch (error) {
-    console.error("取得天氣資料失敗:", error.message);
-
-    if (error.response) {
-      // API 回應錯誤
-      return res.status(error.response.status).json({
-        error: "CWA API 錯誤",
-        message: error.response.data.message || "無法取得天氣資料",
-        details: error.response.data,
-      });
-    }
-
-    // 其他錯誤
-    res.status(500).json({
-      error: "伺服器錯誤",
-      message: "無法取得天氣資料，請稍後再試",
-    });
+    const status = error.status || (error.response?.status) || 500;
+    const message = error.message || (error.response?.data?.message) || "無法取得天氣資料";
+    res.status(status).json({ error: status === 500 ? "伺服器錯誤" : "查無資料", message });
   }
 };
+
+// 合併：同時回傳天氣 + 日出日落資料
+const getWeatherWithSun = async (req, res) => {
+  const { city } = req.query;
+  const locationName = cityMapping[city] || city;
+  try {
+    if (!CWA_API_KEY) {
+      return res.status(500).json({
+        error: "伺服器設定錯誤",
+        message: "請在 .env 檔案中設定 CWA_API_KEY",
+      });
+    }
+    const [weatherData, sunTimes] = await Promise.all([
+      fetchWeatherData(locationName),
+      fetchSunRiseSet(locationName),
+    ]);
+    res.json({ success: true, data: weatherData, sunTimes });
+  } catch (error) {
+    const status = error.status || (error.response?.status) || 500;
+    const message = error.message || (error.response?.data?.message) || "無法取得資料";
+    res.status(status).json({ error: status === 500 ? "伺服器錯誤" : "查無資料", message });
+  }
+};
+
 
 // Routes
 app.get("/", (req, res) => {
@@ -170,13 +201,13 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "OK", timestamp: new Date().toISOString() });
 });
 
-// 取得天氣預報（支援 city 查詢參數，例如: ?city=chiayi-city）
+// 取得天氣 + 日出日落（支援 city 查詢參數，例如: ?city=chiayi-city）
 app.get("/api/weather", (req, res) => {
   if (!req.query.city) {
-    // 預設城市可設為 kaohsiung 或其他
-    req.query.city = "kaohsiung";
+    // 預設城市可設為 taipei 或其他
+    req.query.city = "taipei";
   }
-  getWeather(req, res);
+  getWeatherWithSun(req, res);
 });
 
 // Error handling middleware
