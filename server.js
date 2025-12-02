@@ -15,12 +15,38 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// 城市名稱對應（英 → 中），用於查詢 CWA 所需的中文地名
+const cityMapping = {
+  "taipei": "臺北市",
+  "new-taipei": "新北市",
+  "taoyuan": "桃園市",
+  "taichung": "臺中市",
+  "tainan": "臺南市",
+  "kaohsiung": "高雄市",
+  "keelung": "基隆市",
+  "hsinchu-city": "新竹市",
+  "hsinchu-county": "新竹縣",
+  "miaoli": "苗栗縣",
+  "changhua": "彰化縣",
+  "nantou": "南投縣",
+  "yunlin": "雲林縣",
+  "chiayi-city": "嘉義市",
+  "chiayi-county": "嘉義縣",
+  "pingtung": "屏東縣",
+  "yilan": "宜蘭縣",
+  "hualien": "花蓮縣",
+  "taitung": "臺東縣",
+  "penghu": "澎湖縣",
+  "kinmen": "金門縣",
+  "lienchiang": "連江縣",
+};
 /**
- * 取得高雄天氣預報
- * CWA 氣象資料開放平臺 API
- * 使用「一般天氣預報-今明 36 小時天氣預報」資料集
+ * 取得各城市 36 小時天氣預報
+ * 透過 query 參數 ?city= 對應 cityMapping 英文鍵，轉成中文查詢 CWA
  */
-const getKaohsiungWeather = async (req, res) => {
+const getWeather = async (req, res) => {
+  const { city } = req.query;
+  const locationName = cityMapping[city] || city;
   try {
     // 檢查是否有設定 API Key
     if (!CWA_API_KEY) {
@@ -37,18 +63,21 @@ const getKaohsiungWeather = async (req, res) => {
       {
         params: {
           Authorization: CWA_API_KEY,
-          locationName: "宜蘭縣",
+          locationName: locationName,
         },
       }
     );
 
-    // 取得高雄市的天氣資料
-    const locationData = response.data.records.location[0];
+    // 取得指定城市的天氣資料（只保留所需縣市）
+    const allLocations = response.data.records.location || [];
+    const locationData = allLocations.find(
+      (loc) => loc.locationName === locationName
+    );
 
     if (!locationData) {
       return res.status(404).json({
         error: "查無資料",
-        message: "無法取得高雄市天氣資料",
+        message: `無法取得${locationName}天氣資料`,
       });
     }
 
@@ -141,8 +170,14 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "OK", timestamp: new Date().toISOString() });
 });
 
-// 取得高雄天氣預報
-app.get("/api/weather/kaohsiung", getKaohsiungWeather);
+// 取得天氣預報（支援 city 查詢參數，例如: ?city=chiayi-city）
+app.get("/api/weather", (req, res) => {
+  if (!req.query.city) {
+    // 預設城市可設為 kaohsiung 或其他
+    req.query.city = "kaohsiung";
+  }
+  getWeather(req, res);
+});
 
 // Error handling middleware
 app.use((err, req, res, next) => {
